@@ -1,0 +1,92 @@
+{
+  "basics": {
+    "name": "Your Name",
+    "email": "you@example.com",
+    "phone": "+91 90000 00000",
+    "location": "Bengaluru, India",
+    "headline": "Backend Software Engineer",
+    "years_experience": 3,
+    "links": [
+      {
+        "label": "GitHub",
+        "url": "https://github.com/you"
+      },
+      {
+        "label": "LinkedIn",
+        "url": "https://linkedin.com/in/you"
+      }
+    ]
+  },
+  "summary": "Backend engineer with 3 years building Python services and data pipelines.",
+  "skills_verified": [
+    "Python",
+    "FastAPI",
+    "PostgreSQL",
+    "Docker",
+    "AWS",
+    "Redis",
+    "Git",
+    "REST APIs"
+  ],
+  "experience": [
+    {
+      "id": "acme",
+      "company": "Acme Corp",
+      "role": "Software Engineer",
+      "location": "Bengaluru",
+      "start": "Jul 2022",
+      "end": "Present",
+      "bullets": [
+        {
+          "id": "acme-1",
+          "text": "Built a FastAPI payments service handling 2M requests/day with p99 latency under 120 ms.",
+          "tags": [
+            "backend",
+            "scale"
+          ]
+        },
+        {
+          "id": "acme-2",
+          "text": "Cut AWS costs by 30% by moving batch jobs to spot instances and tuning PostgreSQL.",
+          "tags": [
+            "cloud",
+            "cost"
+          ]
+        },
+        {
+          "id": "acme-3",
+          "text": "Mentored 2 junior engineers and introduced code review guidelines for the team.",
+          "tags": [
+            "leadership"
+          ]
+        }
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "id": "proj-1",
+      "name": "Tengen-Toppa",
+      "url": "https://github.com/you/tengen-toppa",
+      "tech": [
+        "Python",
+        "SQLite",
+        "Claude"
+      ],
+      "bullets": [
+        "Local-first job application autopilot with guarded resume tailoring."
+      ],
+      "locked": true
+    }
+  ],
+  "education": [
+    {
+      "institution": "Your University",
+      "degree": "B.Tech, Computer Science",
+      "start": "2018",
+      "end": "2022"
+    }
+  ],
+  "certifications": [],
+  "achievements": []
+}

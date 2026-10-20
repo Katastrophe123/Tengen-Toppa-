@@ -1,0 +1,62 @@
+[project]
+name = "tengen-toppa"
+version = "1.0.1"
+description = "Tengen-Toppa: local-first AI job application autopilot (Claude Code + WhatsApp)"
+readme = "README.md"
+authors = [
+    { name = "KanishK", email = "kanishk.singh@ethara.ai" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "httpx>=0.28.1",
+    "huey>=3.4.0",
+    "keyring>=25.7.0",
+    "playwright>=1.64.0",
+    "pydantic>=2.14.1",
+    "pypdf>=6.21.1",
+    "sqlmodel>=0.0.22",
+    "typer>=0.27.3",
+    "typst>=0.15.0",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.scripts]
+tengen = "tengen_toppa.cli:app"
+
+[project.optional-dependencies]
+embed = [
+    "fastembed>=0.9.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "respx>=0.23.1",
+    "ruff>=0.17.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/conftest.py" = ["E402"]  # TENGEN_HOME must be set before importing the package
+"tests/*" = ["E501"]
+"src/tengen_toppa/apply/form.py" = ["E501"]  # embedded JavaScript

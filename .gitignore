@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv
+.pytest_cache/
+.ruff_cache/
+
+# Runtime data is personal: folders are kept via .gitkeep, contents never committed.
+data/*
+!data/.gitkeep
+!data/profile/
+data/profile/*
+!data/profile/.gitkeep
+logs/*
+!logs/.gitkeep
+backups/*
+!backups/.gitkeep
+models/*
+!models/.gitkeep
+llm-sandbox/*
+!llm-sandbox/.gitkeep
+launchd/*
+!launchd/.gitkeep
+config/playwright-mcp.json
+*.db
+.env

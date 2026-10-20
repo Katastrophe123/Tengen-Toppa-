@@ -1,0 +1,77 @@
+# Tengen-Toppa settings. Edit, then restart the worker.
+
+[search]
+title_include = ["ai engineer", "ai software engineer", "llm", "machine learning", "ml engineer", "data science", "python"]
+title_exclude = ["intern", "senior", "sr", "lead", "principal", "staff", "director", "manager"]
+locations = ["gurugram", "gurgaon", "india", "remote"]
+allow_remote = true
+company_blacklist = []
+max_years_gap = 2              # skip if JD asks for > your years + this
+needs_visa_sponsorship = false
+
+# Public ATS job boards (the slug from the company's careers URL)
+[sources.greenhouse]
+boards = ["stripe", "databricks"]   # boards.greenhouse.io/<slug>
+
+[sources.lever]
+companies = []                      # jobs.lever.co/<slug>
+
+[sources.ashby]
+boards = []                         # jobs.ashbyhq.com/<slug>
+
+[pipeline]
+discover_every_hours = 4
+analyze_per_run = 25          # top-N jobs (after free local prefilter) sent to Claude
+min_score = 70                # below this, job is skipped
+daily_tailor_cap = 20         # protects your Claude subscription limits
+auto_apply_threshold = 0      # 0 = always ask on WhatsApp
+allow_project_reorder = false # projects are always locked; this only allows reordering
+max_bullets_per_role = 5
+
+[llm]
+analyze_model = "haiku"
+tailor_model = "sonnet"
+timeout_seconds = 300
+max_tailor_attempts = 3
+
+[whatsapp]
+graph_version = "v23.0"
+digest_template = "tengen_daily_digest"   # approved utility template, 1 body param: job count
+alert_template = "tengen_alert"           # approved utility template, 1 body param: text
+template_language = "en"
+digest_hour = 9
+
+# Facts used to fill application forms. Used verbatim, never invented.
+# Anything a form asks that isn't here or in the Q&A bank is asked on WhatsApp and remembered.
+[applicant]
+country = "India"
+work_authorized = true
+requires_sponsorship = false
+notice_period = ""           # not on the resume: blank = asked once on WhatsApp, then remembered
+earliest_start = ""
+current_ctc = ""
+expected_ctc = ""
+willing_to_relocate = true   # CONFIRM
+open_to_remote = true        # CONFIRM
+how_did_you_hear = ""
+pronouns = ""
+gender = ""
+race_ethnicity = ""
+veteran_status = ""
+disability_status = ""
+
+[apply]
+mode = "auto_fill"          # "assist" = only open the page + reveal the resume
+auto_submit = false         # false = fill everything, send you a screenshot, YOU click submit on the Mac
+cdp_port = 9333             # dedicated Chrome profile (data/browser-profile) driven over CDP
+browser = "chrome"          # "chrome" (installed Google Chrome) or "chromium" (Playwright's)
+claude_fallback = true      # unknown sites: Claude Code + Playwright MCP fills the form (never submits)
+fallback_max_turns = 40
+cover_letter = "when_field_present"   # "always" | "never"
+
+[email]
+enabled = false             # track replies (interview / rejection / assessment) over IMAP
+imap_host = "imap.gmail.com"
+address = ""                # Gmail: create an App Password, then `tengen secrets set email_app_password`
+poll_minutes = 30
+lookback_days = 3
