@@ -8,16 +8,38 @@ import re
 from sqlmodel import Session, select
 
 from tengen_toppa.intake import find_url
+from tengen_toppa.linkedin import controller as li_controller
+from tengen_toppa.linkedin import tasks as li_tasks
 from tengen_toppa.pipeline import questions, steps, tasks
 from tengen_toppa.store.db import kv_get, kv_set
 from tengen_toppa.store.models import JobStatus, WAMessage
-from tengen_toppa.whatsapp import notify
+from tengen_toppa.whatsapp import dashboard, notify
 from tengen_toppa.whatsapp.inbound import Inbound, normalize_number
 
 log = logging.getLogger(__name__)
 
 _CMD_RE = re.compile(r"^(apply|skip|done|job|edit|submit)\s+#?(\d+)\s*(.*)$", re.I | re.S)
-_COMMANDS = {"help", "?", "commands", "status", "more", "start", "next", "pause", "resume", "question", "questions"}
+_COMMANDS = {
+    "help",
+    "?",
+    "commands",
+    "status",
+    "more",
+    "start",
+    "next",
+    "pause",
+    "resume",
+    "question",
+    "questions",
+    "run",
+    "run dry",
+    "stop",
+    "dash",
+    "failed",
+    "skipped",
+    "answers",
+    "report",
+}
 
 
 def handle(s: Session, msg: Inbound, my_number: str) -> str | None:
@@ -44,6 +66,8 @@ def handle(s: Session, msg: Inbound, my_number: str) -> str | None:
 def _dispatch(s: Session, msg: Inbound) -> str | None:
     if msg.kind == "button":
         action, _, raw_id = msg.text.partition(":")
+        if action.startswith("li"):
+            return _li_button(s, action, raw_id)
         if not raw_id.isdigit():
             return "Unknown button."
         return _job_action(s, action, int(raw_id), "")
@@ -53,12 +77,20 @@ def _dispatch(s: Session, msg: Inbound) -> str | None:
 
     pending = kv_get(s, "pending_input")
     if pending and pending.get("kind") == "qa" and low not in _COMMANDS and not _CMD_RE.match(text):
-        reply, resume_job = questions.answer_current(s, text)
-        if resume_job is not None:
-            tasks.apply_task(resume_job)
-        return reply
+        res = questions.answer(s, text)
+        if res.job_id is not None:
+            tasks.apply_task(res.job_id)
+        if res.li_skipped:
+            li_controller.skip_unanswerable(s, res.li_skipped)
+        if res.li_ready and li_controller.requeue_answered(s, res.li_ready):
+            run = li_controller.active_run(s)
+            if run and run.state == "applying" and not li_controller.stop_reason(s):
+                li_tasks.li_apply_step(run.id)
+        return res.reply
 
-    if low in ("question", "questions"):
+    if (li_reply := _li_command(s, low)) is not None:
+        return li_reply or None
+    if low in ("question", "questions", "answers"):
         if not questions.queue(s):
             return "No application questions are waiting."
         questions.send_next(s)
@@ -78,11 +110,13 @@ def _dispatch(s: Session, msg: Inbound) -> str | None:
         return None
     if low == "pause":
         kv_set(s, "paused", True)
-        return "Paused. Nothing new will be discovered or tailored. Send 'resume' to continue."
+        return "Paused. No new discovery, tailoring or LinkedIn applications. Send 'resume' to continue."
     if low == "resume":
         kv_set(s, "paused", False)
         kv_set(s, "llm_paused_until", None)
         tasks.drain_task()
+        if li_controller.active_run(s):
+            li_tasks.li_resume_run()
         return "Resumed."
     if m := re.fullmatch(r"limit\s+(\d+)", low):
         kv_set(s, "daily_cap", int(m.group(1)))
@@ -132,3 +166,49 @@ def _retailor(s: Session, job_id: int, feedback: str) -> str:
         return f"#{job_id} hasn't been analyzed yet."
     tasks.tailor_job_task(job_id, feedback)
     return f"Re-tailoring #{job_id} with your note. New PDF coming shortly."
+
+
+# ---------- LinkedIn ----------
+
+
+def _li_command(s: Session, low: str) -> str | None:
+    """Returns a reply, "" for 'handled, no reply', or None if this isn't a LinkedIn command."""
+    from tengen_toppa.config import settings
+
+    if low in ("run", "run dry"):
+        if run := li_controller.active_run(s):
+            return f"Run #{run.id} is already {run.state}. Send 'dash' for the dashboard or 'stop'."
+        li_tasks.li_start("dry" if low == "run dry" else "full", "whatsapp")
+        return "Starting the LinkedIn run: checks first, then reading jobs. Dashboard follows."
+    if low == "stop":
+        li_controller.request_stop(s)
+        return "Stopping after the current step. Nothing half-filled is submitted."
+    if low == "dash":
+        return dashboard.build(s)
+    if low in ("failed", "skipped"):
+        return dashboard.list_recent(s, low)
+    if low == "report":
+        return dashboard.report(s)
+    if m := re.fullmatch(r"cap\s+(\d+)", low):
+        hard = settings().linkedin.max_applications_per_day
+        n = min(int(m.group(1)), hard)
+        kv_set(s, "li_daily_cap", n)
+        return f"LinkedIn daily cap set to {n} (hard limit {hard} from settings)."
+    return None
+
+
+def _li_button(s: Session, action: str, job_id: str) -> str | None:
+    match action:
+        case "liapply":
+            li_tasks.li_approve(job_id)
+            return "Filling the Easy Apply form. Screenshot follows; nothing is submitted until you tap Submit now."
+        case "lisubmit":
+            li_tasks.li_submit(job_id)
+            return "Submitting..."
+        case "liskip":
+            res = li_controller.skip(s, job_id)
+            run = li_controller.active_run(s)
+            if run and res.delay is not None and run.state == "applying":
+                li_tasks.li_apply_step.schedule((run.id,), delay=int(res.delay))
+            return "Skipped."
+    return "Unknown button."

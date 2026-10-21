@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en"><head><title>AI Engineer | Fixture Labs | LinkedIn</title></head>
+<body>
+<!-- Mimics LinkedIn's job page + Easy Apply flow. No role="dialog" on purpose: the real modal had none. -->
+<header><input aria-label="Search" placeholder="Search"><select aria-label="Select language"><option>English</option></select></header>
+<main id="job">
+  <h1>AI Engineer</h1>
+  <div id="status"></div>
+  <button id="ea" aria-label="Easy Apply to this job" onclick="openModal()">Easy Apply</button>
+  <h2>About the job</h2>
+  <p>We need 0-1 years of experience with Python and LLMs.</p>
+  <h2>About the company</h2>
+</main>
+<div id="overlay"></div>
+<script>
+const params = new URLSearchParams(location.search);
+const ONE_CLICK = params.get('oneclick') === '1';
+const UNKNOWN_Q = params.get('unknown') === '1';
+let step = 0, uploaded = null, clicks = [];
+window.__submitted = false;
+window.__clicks = clicks;
+const steps = [
+  () => `<h3>Contact info</h3>
+    <div class="fb"><label for="em">Email address</label><select id="em" required><option>kanishksinghparihar64@gmail.com</option></select></div>
+    <div class="fb"><label for="cc">Phone country code</label><select id="cc" required><option value="in" selected>India (+91)</option></select></div>
+    <div class="fb"><label for="ph">Mobile phone number</label><input id="ph" type="tel" required value="9755360163"></div>
+    <button aria-label="Continue to next step" onclick="go()">Next</button>`,
+  () => `<h3>Resume</h3>
+    <div class="card">Old_Resume_2024.pdf</div>
+    ${uploaded ? `<div class="card selected" aria-checked="true">${uploaded}</div>` : ''}
+    <label for="up">Upload resume</label><input id="up" type="file" accept=".pdf" onchange="up(this)">
+    <button aria-label="Continue to next step" onclick="go()">Next</button>`,
+  () => `<h3>Additional questions</h3>
+    <div class="fb"><label for="py">How many years of experience do you have with Python?</label><input id="py" type="text" required></div>
+    <fieldset><legend>Do you have 5+ years of experience in machine learning?</legend>
+      <label><input type="radio" name="ml" value="Yes" required> Yes</label><label><input type="radio" name="ml" value="No"> No</label></fieldset>
+    <div class="fb"><label for="ofc">Are you comfortable working from our Gurugram office?</label>
+      <select id="ofc" required><option>Select an option</option><option>Yes</option><option>No</option></select></div>
+    ${UNKNOWN_Q ? `<div class="fb"><label for="k8">How many years of experience do you have with Kubernetes?</label><input id="k8" required></div>` : ''}
+    <button aria-label="Review your application" onclick="go()">Review</button>`,
+  () => `<h3>Review your application</h3><p>Resume: ${uploaded}</p>
+    <label><input type="checkbox" id="follow" checked> Follow Fixture Labs to stay up to date</label>
+    <button aria-label="Submit application" onclick="submitApp()">Submit application</button>`,
+];
+function render() {
+  document.getElementById('overlay').innerHTML =
+    `<div class="artdeco-modal"><div class="content">${steps[step]()}</div>
+     <button aria-label="Dismiss" onclick="closeModal()">×</button></div>`;
+}
+function validate() {
+  const root = document.querySelector('.artdeco-modal');
+  for (const el of root.querySelectorAll('[required]')) {
+    if (el.type === 'radio') { if (!root.querySelector(`input[name="${el.name}"]:checked`)) return false; }
+    else if (!el.value || el.value === 'Select an option') return false;
+  }
+  return step !== 1 || !!uploaded;
+}
+function openModal() {
+  clicks.push('open');
+  if (ONE_CLICK) { done(); return; }
+  step = 0; render();
+}
+function go() {
+  clicks.push('next' + step);
+  if (!validate()) { document.querySelector('.content').insertAdjacentHTML('beforeend', '<div role="alert">Please enter a valid answer</div>'); return; }
+  step++; render();
+}
+function up(input) { uploaded = input.files[0].name; render(); }
+function submitApp() {
+  clicks.push('submit');
+  window.__follow = document.getElementById('follow').checked;
+  window.__answers = { py: (window.__py || '') };
+  done();
+}
+function done() {
+  window.__submitted = true;
+  document.getElementById('overlay').innerHTML = '<div>Your application was sent to Fixture Labs!</div>';
+  document.getElementById('ea').remove();
+  document.getElementById('status').textContent = 'Applied 1m ago';
+}
+function closeModal() { clicks.push('dismiss'); document.getElementById('overlay').innerHTML = ''; }
+document.addEventListener('input', e => { if (e.target.id === 'py') window.__py = e.target.value; });
+</script>
+</body></html>

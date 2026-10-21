@@ -28,3 +28,6 @@ launchd/*
 config/playwright-mcp.json
 *.db
 .env
+
+# Local kill switch for LinkedIn runs
+STOP

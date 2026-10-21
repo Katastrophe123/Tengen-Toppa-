@@ -16,7 +16,8 @@ log = logging.getLogger(__name__)
 # Tags every fillable control with data-tt-id and returns a description of each question.
 # Radio/checkbox groups become one field with options; option inputs get data-tt-opt.
 _COLLECT_JS = r"""
-() => {
+(rootSel) => {
+  const ROOT = rootSel ? (document.querySelector(rootSel) || document) : document;
   const txt = el => (el ? (el.innerText || el.textContent || '') : '').replace(/\s+/g, ' ').trim();
   const shown = el => { if (!el) return false; const r = el.getBoundingClientRect(); const st = getComputedStyle(el);
     return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none'; };
@@ -44,7 +45,7 @@ _COLLECT_JS = r"""
     return t;
   };
   const out = []; const groups = {}; let n = 0;
-  for (const el of document.querySelectorAll('input, textarea, select')) {
+  for (const el of ROOT.querySelectorAll('input, textarea, select')) {
     const type = (el.getAttribute('type') || el.tagName).toLowerCase();
     if (['hidden', 'submit', 'button', 'image', 'reset', 'search', 'password'].includes(type)) continue;
     if (el.disabled || el.readOnly || !usable(el)) continue;
@@ -87,8 +88,8 @@ _CAPTCHA_JS = r"""
 """
 
 
-def collect_fields(page: Page) -> list[FormField]:
-    raw = page.evaluate(_COLLECT_JS)
+def collect_fields(page: Page, root: str | None = None) -> list[FormField]:
+    raw = page.evaluate(_COLLECT_JS, root)
     fields = [
         FormField(**{k: r[k] for k in ("key", "label", "kind", "required", "options", "name", "value")}) for r in raw
     ]

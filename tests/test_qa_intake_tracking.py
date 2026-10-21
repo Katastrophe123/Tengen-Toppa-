@@ -31,7 +31,6 @@ from tengen_toppa.tracking import EmailVerdict, parse_mail, process_mails
         ("Are you legally authorized to work in India?", "Yes"),
         ("Notice period", "30 days"),
         ("How did you hear about us?", "Company careers page"),
-        ("Total years of experience", "3"),
         ("Current company", "Acme Corp"),
         ("Do you have experience with Kubernetes?", None),
     ],

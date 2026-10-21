@@ -87,6 +87,75 @@ class ProcessedEmail(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class LiState(StrEnum):
+    POOLED = "pooled"  # passed card filters, waiting
+    INELIGIBLE = "ineligible"  # failed a filter (reason in skip_reason)
+    QUEUED = "queued"  # picked for the current run
+    WAITING_ANSWER = "waiting_answer"  # needs an answer from you
+    SUBMITTING = "submitting"  # written BEFORE any click that can submit (crash-safe)
+    APPLIED = "applied"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+    CLOSED = "closed"  # no longer accepting applications
+
+
+class LiJob(SQLModel, table=True):
+    job_id: str = Field(primary_key=True)
+    title: str
+    company: str = Field(index=True)
+    location: str = ""
+    workplace: str = ""
+    url: str = ""
+    easy_apply: bool = True
+    description: str | None = Field(default=None, sa_column=Column(Text))
+    years_required: float | None = None
+    score: float | None = Field(default=None, index=True)
+    fingerprint: str = Field(index=True)
+    state: LiState = Field(default=LiState.POOLED, index=True)
+    skip_reason: str | None = None
+    attempts: int = 0
+    search: str = ""
+    first_seen: datetime = Field(default_factory=utcnow)
+    last_seen: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class LiRun(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    kind: str = "full"  # full | dry
+    state: str = Field(default="starting", index=True)  # starting|harvesting|applying|paused|done|stopped
+    trigger: str = "manual"
+    target: int = 0  # applications this run may make
+    harvested: int = 0
+    new_in_pool: int = 0
+    applied: int = 0
+    skipped: int = 0
+    failed: int = 0
+    waiting: int = 0
+    consecutive_failures: int = 0
+    pages: int = 0
+    stop_reason: str | None = None
+    last_event: str | None = None
+    started_at: datetime = Field(default_factory=utcnow)
+    ended_at: datetime | None = None
+
+
+class LiApplication(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    job_id: str = Field(index=True, foreign_key="lijob.job_id")
+    run_id: int | None = Field(default=None, index=True)
+    outcome: str = "submitting"  # submitting | applied | ready | needs_answers | skipped | failed | captcha
+    resume_sha: str = ""
+    steps: int = 0
+    answers: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    detail: str | None = None
+    screenshot: str | None = None
+    li_status: str | None = None
+    li_status_at: datetime | None = None
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+    submitted_at: datetime | None = Field(default=None, index=True)
+
+
 class LLMCall(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     step: str = Field(index=True)

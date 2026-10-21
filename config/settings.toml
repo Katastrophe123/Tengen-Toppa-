@@ -47,6 +47,7 @@ digest_hour = 9
 country = "India"
 work_authorized = true
 requires_sponsorship = false
+work_authorized_countries = ["India"]   # only India without sponsorship; add a country only if your passport/visa allows it
 notice_period = ""           # not on the resume: blank = asked once on WhatsApp, then remembered
 earliest_start = ""
 current_ctc = ""
@@ -75,3 +76,52 @@ imap_host = "imap.gmail.com"
 address = ""                # Gmail: create an App Password, then `tengen secrets set email_app_password`
 poll_minutes = 30
 lookback_days = 3
+
+# ---------------- LinkedIn Easy Apply (v1.1) ----------------
+
+# Your own statement of experience. Used verbatim for "years with X" questions; never inferred.
+[experience]
+total_years = 1
+verified_skill_years = 1      # every skill in skills_verified
+ai_skill_years = 1            # every term in ai_terms below (you: "1+ year across AI technologies")
+max_years_required = 1        # only apply when the job asks for at most this many years
+# Remove anything you have NOT worked with; forms will answer "1 year / Yes" for every term listed here.
+ai_terms = ["AI", "artificial intelligence", "machine learning", "ML", "deep learning", "LLM", "LLMs",
+  "large language models", "generative AI", "GenAI", "NLP", "natural language processing", "RAG",
+  "retrieval-augmented generation", "vector database", "vector databases", "embeddings", "LangChain",
+  "LangGraph", "LlamaIndex", "Hugging Face", "Transformers", "prompt engineering", "fine-tuning", "LoRA",
+  "PEFT", "RLHF", "SFT", "AI agents", "agentic AI", "MCP", "Model Context Protocol", "OpenAI", "GPT",
+  "Claude", "Gemini", "Llama", "MLOps", "LLMOps", "PyTorch", "TensorFlow", "Keras", "scikit-learn",
+  "XGBoost", "computer vision", "Pandas", "NumPy"]
+# skills = { Kubernetes = 0 }   # per-skill overrides (anything not listed is asked once on WhatsApp)
+
+[linkedin]
+enabled = true
+mode = "review"               # "review": you approve each job + tap Submit (test flight). "auto": fully autonomous.
+keywords = ["AI Engineer", "LLM Engineer", "Machine Learning Engineer", "Generative AI", "AI Software Engineer",
+  "Python Developer", "Data Scientist"]
+locations = ["India", "Gurugram", "Delhi", "Bengaluru", "Hyderabad", "Pune", "Mumbai", "Chennai", "Noida"]
+experience_levels = ["entry", "associate"]
+workplace = ["onsite", "remote", "hybrid"]
+pool_target = 500             # standing pool of eligible Easy Apply jobs
+first_fill_days = 7           # first fill reads the past week; later runs only the past 24h
+max_pages_per_search = 8
+max_pages_per_run = 40
+page_delay_seconds = 4
+max_applications_per_day = 30 # hard cap, checked at the moment of submit
+max_per_hour = 10
+apply_interval_seconds = 90
+windows = ["10:00", "14:00", "18:00"]
+per_window = 10
+auto_schedule = false         # true: start a run of `per_window` at each window (auto mode only)
+stop_after_consecutive_failures = 5
+follow_company = false
+resume_display_name = "Kanishk_Singh_Parihar_Resume.pdf"
+dedupe_days = 30
+status_sync_hours = [9, 21]
+max_steps = 10
+
+[dashboard]
+interval_minutes = 3
+only_when_changed = true
+commands_offline_pause_minutes = 10

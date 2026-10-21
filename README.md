@@ -4,7 +4,7 @@
 
 <h1 align="center">Tengen-Toppa</h1>
 
-<p align="center"><b>Version 1.0.1</b> · Local-first AI job-application autopilot · Claude Code + WhatsApp</p>
+<p align="center"><b>Version 1.1.0</b> · Local-first AI job-application autopilot · Claude Code + WhatsApp</p>
 
 A job-application autopilot that runs on your own Mac. It finds jobs, tailors your resume **without inventing anything**, fills application forms, asks you only what it can't know, and tracks replies. You control it from **WhatsApp**. All AI runs through your **Claude Code subscription** (no API key). All data stays on your Mac.
 
@@ -32,7 +32,7 @@ A job-application autopilot that runs on your own Mac. It finds jobs, tailors yo
         IMAP reply tracking → interview / assessment / rejection / offer alerts
 ```
 
-## Status (v1.0.1)
+## Status (v1.1.0)
 
 | Area | State |
 |---|---|
@@ -44,13 +44,16 @@ A job-application autopilot that runs on your own Mac. It finds jobs, tailors yo
 | WhatsApp two-way (cards, buttons, commands, form questions), signed webhook | Working end to end |
 | Email reply tracking (IMAP) | Built and tested offline; off by default |
 | Background running via launchd | Built; quick tunnel needs `tunnel-sync` after sleep |
-| Tests | 74 passing (`uv run pytest`), incl. real headless-Chrome form filling |
+| **LinkedIn Easy Apply autopilot**: standing pool (≥500), harvester, years filter, Easy Apply engine, run controller | Harvester, job-page reader and pre-run checks verified live (read-only). Engine verified on a local copy of the Easy Apply flow; **first live applications pending in review mode** |
+| WhatsApp live dashboard (every 3 min, only when changed), run commands, kill switches | Built and tested |
+| Tests | 135 passing (`uv run pytest`), incl. real headless-Chrome form filling and Easy Apply flows |
 
 **Known limits**
 - A cloudflared *quick* tunnel dies when the Mac sleeps or the network changes. Restart cloudflared, then run `uv run tengen tunnel-sync`. A named Cloudflare tunnel (needs a domain) avoids this.
 - The Meta test number can only message numbers verified in the Meta dashboard. A real business number needs a payment method, business verification and a complete business profile.
 - WhatsApp allows free-form bot messages only for 24h after your last message. Approved templates (`tengen_daily_digest`, `tengen_alert`) cover the rest.
-- LinkedIn, Naukri and Workday are assist-only by design: the final submit is always yours.
+- Naukri and Workday are assist-only by design. LinkedIn Easy Apply has its own engine (below), capped at 30/day.
+- **Automating LinkedIn is against LinkedIn's terms and can get the account restricted.** Tengen-Toppa paces itself and stops on any checkpoint, but it does not hide that it's automated.
 
 ## Folder layout
 
@@ -73,6 +76,53 @@ tengen-toppa/
 └── logs/ backups/ models/ llm-sandbox/ launchd/   (git-ignored contents)
 ```
 Secrets live in the macOS Keychain (service `tengen-toppa`), never in files. Set `TENGEN_HOME` to keep data somewhere else.
+
+
+## LinkedIn Easy Apply autopilot
+
+Applies to LinkedIn Easy Apply jobs with **one fixed resume PDF**, at most **30 per day**, and only to jobs asking for **up to 1 year** of experience.
+
+```
+pool (≥500 eligible Easy Apply jobs, topped up from the past 24h each run)
+  → read job page (no clicks): closed? applied? Easy Apply? years required ≤ 1?
+  → write "submitting" record + check today's cap          ← crash-safe, cap checked at the click
+  → Easy Apply window: contact → resume (this exact PDF) → questions → review → submit
+  → unknown required question → skip job, ask you once on WhatsApp, job re-queued after your answer
+  → LinkedIn checkpoint / limit / login wall → stop the run, alert you
+```
+
+**Setup**
+```bash
+uv run tengen resume set ~/Downloads/ResumeV1.pdf   # checked against master_profile.json
+uv run tengen browser                               # sign in to LinkedIn in Tengen Chrome (once)
+uv run tengen li-preflight                          # read-only checks
+uv run tengen li-harvest --pages 3                  # read-only: fill the pool, see what it finds
+uv run tengen li-pool                               # top of the pool
+```
+Settings live in `config/settings.toml` under `[linkedin]`, `[experience]` and `[dashboard]`.
+- `[experience]`: your stated years. Every skill in your profile and every term in `ai_terms` counts as 1 year; forms are answered from this only. A skill not listed (e.g. Kubernetes) is asked once on WhatsApp.
+- `[linkedin] mode`:
+  - `"review"` (the default, for the test flight): each job asks for your **Apply**, then sends a screenshot with **Submit now**.
+  - `"auto"`: fully autonomous. Needs the `tengen_alert` template approved.
+
+**Run** (worker running): send `run` (or `run dry` to read and rank only) on WhatsApp, or `uv run tengen li-run [--dry]`.
+
+**Dashboard** (every 3 min during a run, only when something changed):
+```
+📊 Tengen-Toppa · Run #12 · applying (1h 05m) · auto mode
+Pool 486 · harvested 120 · new eligible 31
+✅ Applied 9/30 · ⏭ Skipped 4 · ❌ Failed 1 · ❓ Waiting 2
+Today 9/30 · last hour 6/10
+Last: ✅ AI Engineer @ Acme · ⏭ ML Engineer @ Foo · ✅ LLM Dev @ Bar
+```
+Commands: `run` · `run dry` · `stop` · `pause` · `resume` · `dash` · `failed` · `skipped` · `answers` · `cap N` · `report`.
+
+**Safety**
+- Every click goes through a guard. "Easy Apply" (which submits on one-click jobs) and "Submit application" can only be clicked by a run you started, after the cap check.
+- Aborting never clicks Dismiss or Discard: the tab is navigated away.
+- Daily cap of 30 and hourly cap of 10, counted from the database at the moment of submit. Optional windows: 10:00 / 14:00 / 18:00, 10 each.
+- Kill switches: `stop` on WhatsApp, `uv run tengen li-stop`, or a file named `STOP` in the project folder. The run pauses by itself if your WhatsApp commands can't reach the Mac for 10 minutes.
+- Status sync reads LinkedIn's Applied tracker twice a day (`li-sync-status`).
 
 ## Requirements
 macOS, Python 3.12 (via `uv`), Claude Code logged in with a Pro/Max subscription, Google Chrome (or Playwright Chromium), Node (for the Playwright MCP fallback), `cloudflared`, a Meta developer account for WhatsApp.
@@ -179,5 +229,6 @@ uv run ruff check src tests
 ```
 
 ## Changelog
+- **1.1.0**: LinkedIn Easy Apply autopilot (pool harvester, job-page reader, guarded Easy Apply engine, crash-safe run controller, 30/day + 10/hour caps, review/auto modes), WhatsApp live dashboard and run commands, kill switches and command-channel health, `resume set` with profile matching, experience engine (`[experience]`). Fix: the Q&A bank no longer reuses answers across questions that differ in numbers or skills.
 - **1.0.1**: WhatsApp diagnostics (`wa-verify`, `wa-subscribe`, `tunnel-sync`), webhook accepts root/trailing-slash URLs and logs rejection reasons, secret validation on `secrets set`, clearer skip-reason note on cards, ATS coverage counts the headline, project-local data folder, privacy policy.
 - **1.0.0**: full pipeline: discovery, intake by link, analysis, guarded tailoring, cover letters, form filling with Claude fallback, Q&A over WhatsApp, reply tracking.

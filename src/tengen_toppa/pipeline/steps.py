@@ -426,16 +426,25 @@ def status_text(s: Session) -> str:
     return "\n".join(lines)
 
 
-HELP_TEXT = """Commands:
-<any job link> - add a job (LinkedIn, Naukri, Greenhouse, Lever, Ashby, company sites)
+HELP_TEXT = """Commands
+
+LinkedIn Easy Apply:
+run - start a LinkedIn run (checks, read jobs, apply up to today's cap)
+run dry - read and rank jobs only, apply to nothing
+stop - stop after the current step
+dash - live dashboard now
+failed / skipped - last 10 with reasons
+answers - repeat the pending form question
+cap N - lower today's LinkedIn cap
+report - statuses and view rate
+
+Other jobs:
+<any job link> - add a job (Greenhouse, Lever, Ashby, company sites)
 status - pipeline status
 more - next batch of job cards
 job N - resend card for job N
-apply N / skip N - same as the buttons (apply = fill the form on your Mac)
-submit N - submit a filled form
+apply N / skip N / submit N / done N - job actions
 edit N <what to change> - re-tailor resume
-done N - mark job N as submitted
-question - repeat the pending application question
-pause / resume - stop or start the pipeline
-limit N - daily tailoring cap
+
+pause / resume - stop or start everything
 help - this message"""

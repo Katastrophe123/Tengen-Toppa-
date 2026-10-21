@@ -6,8 +6,11 @@ Python Playwright and the Claude Playwright-MCP agent attach to the same browser
 
 from __future__ import annotations
 
+import fcntl
 import logging
+import os
 import subprocess
+import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -73,6 +76,58 @@ def ensure_browser(
         time.sleep(0.5)
     proc.terminate()
     raise BrowserError(f"Chrome did not open CDP port {port}")
+
+
+_THREAD_LOCK = threading.RLock()
+_LOCAL = threading.local()
+
+
+class BrowserBusy(RuntimeError):
+    pass
+
+
+@contextmanager
+def browser_lock(timeout: float = 600, owner: str = "") -> Iterator[None]:
+    """One driver of Tengen Chrome at a time: across threads (RLock) and processes (flock).
+    Re-entrant within a thread, so nested helpers don't deadlock."""
+    from tengen_toppa.paths import get_paths
+
+    depth = getattr(_LOCAL, "depth", 0)
+    if depth:
+        _LOCAL.depth = depth + 1
+        try:
+            yield
+        finally:
+            _LOCAL.depth -= 1
+        return
+    if not _THREAD_LOCK.acquire(timeout=timeout):
+        raise BrowserBusy(f"browser busy (waited {timeout:.0f}s)")
+    path = get_paths().data / "browser.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fh = path.open("a+")
+    try:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() > deadline:
+                    raise BrowserBusy(f"browser busy in another process (waited {timeout:.0f}s)") from None
+                time.sleep(0.5)
+        fh.seek(0)
+        fh.truncate()
+        fh.write(f"{owner} pid={os.getpid()}\n")
+        fh.flush()
+        _LOCAL.depth = 1
+        try:
+            yield
+        finally:
+            _LOCAL.depth = 0
+            fcntl.flock(fh, fcntl.LOCK_UN)
+    finally:
+        fh.close()
+        _THREAD_LOCK.release()
 
 
 def start_configured() -> int:

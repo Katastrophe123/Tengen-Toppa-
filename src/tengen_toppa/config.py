@@ -71,6 +71,8 @@ class ApplicantSettings(BaseModel):
     country: str = "India"
     work_authorized: bool = True
     requires_sponsorship: bool = False
+    # Countries you can work in without sponsorship. "European Union" covers all EU members.
+    work_authorized_countries: list[str] = Field(default_factory=lambda: ["India"])
     notice_period: str = "30 days"
     earliest_start: str = "Within 30 days"
     current_ctc: str = ""
@@ -104,6 +106,121 @@ class EmailSettings(BaseModel):
     lookback_days: int = 3
 
 
+DEFAULT_AI_TERMS = [
+    "AI",
+    "artificial intelligence",
+    "machine learning",
+    "ML",
+    "deep learning",
+    "LLM",
+    "LLMs",
+    "large language models",
+    "generative AI",
+    "GenAI",
+    "NLP",
+    "natural language processing",
+    "RAG",
+    "retrieval-augmented generation",
+    "vector database",
+    "vector databases",
+    "embeddings",
+    "LangChain",
+    "LangGraph",
+    "LlamaIndex",
+    "Hugging Face",
+    "Transformers",
+    "prompt engineering",
+    "fine-tuning",
+    "LoRA",
+    "PEFT",
+    "RLHF",
+    "SFT",
+    "AI agents",
+    "agentic AI",
+    "MCP",
+    "Model Context Protocol",
+    "OpenAI",
+    "GPT",
+    "Claude",
+    "Gemini",
+    "Llama",
+    "MLOps",
+    "LLMOps",
+    "PyTorch",
+    "TensorFlow",
+    "Keras",
+    "scikit-learn",
+    "XGBoost",
+    "computer vision",
+    "Pandas",
+    "NumPy",
+]
+
+
+class ExperienceSettings(BaseModel):
+    """Your own statement of experience, used verbatim for 'years with X' questions. Never inferred."""
+
+    total_years: float = 1
+    verified_skill_years: float = 1  # every skill in skills_verified
+    ai_skill_years: float = 1  # every term in ai_terms (you stated: 1+ year across AI tech)
+    ai_terms: list[str] = Field(default_factory=lambda: list(DEFAULT_AI_TERMS))
+    skills: dict[str, float] = Field(default_factory=dict)  # per-skill overrides
+    max_years_required: float = 1  # only apply when the job asks for at most this many years
+
+
+class LinkedInSettings(BaseModel):
+    enabled: bool = True
+    mode: Literal["auto", "review"] = "review"  # review = you approve + tap Submit for each job
+    keywords: list[str] = Field(
+        default_factory=lambda: [
+            "AI Engineer",
+            "LLM Engineer",
+            "Machine Learning Engineer",
+            "Generative AI",
+            "AI Software Engineer",
+            "Python Developer",
+            "Data Scientist",
+        ]
+    )
+    locations: list[str] = Field(
+        default_factory=lambda: [
+            "Gurugram, Haryana, India",
+            "Delhi, India",
+            "Bengaluru, Karnataka, India",
+            "India",
+        ]
+    )
+    experience_levels: list[Literal["internship", "entry", "associate", "mid_senior"]] = Field(
+        default_factory=lambda: ["entry", "associate"]
+    )
+    workplace: list[Literal["onsite", "remote", "hybrid"]] = Field(
+        default_factory=lambda: ["onsite", "remote", "hybrid"]
+    )
+    first_fill_days: int = 7
+    pool_target: int = 500
+    max_pages_per_search: int = 8
+    max_pages_per_run: int = 40
+    page_delay_seconds: float = 4
+    max_applications_per_day: int = 30
+    max_per_hour: int = 10
+    windows: list[str] = Field(default_factory=lambda: ["10:00", "14:00", "18:00"])
+    per_window: int = 10
+    auto_schedule: bool = False
+    apply_interval_seconds: int = 90
+    stop_after_consecutive_failures: int = 5
+    follow_company: bool = False
+    resume_display_name: str = "Kanishk_Singh_Parihar_Resume.pdf"
+    dedupe_days: int = 30
+    status_sync_hours: list[int] = Field(default_factory=lambda: [9, 21])
+    max_steps: int = 10
+
+
+class DashboardSettings(BaseModel):
+    interval_minutes: int = 3
+    only_when_changed: bool = True
+    commands_offline_pause_minutes: int = 10
+
+
 class Settings(BaseModel):
     search: SearchSettings = Field(default_factory=SearchSettings)
     sources: Sources = Field(default_factory=Sources)
@@ -113,6 +230,9 @@ class Settings(BaseModel):
     applicant: ApplicantSettings = Field(default_factory=ApplicantSettings)
     apply: ApplySettings = Field(default_factory=ApplySettings)
     email: EmailSettings = Field(default_factory=EmailSettings)
+    experience: ExperienceSettings = Field(default_factory=ExperienceSettings)
+    linkedin: LinkedInSettings = Field(default_factory=LinkedInSettings)
+    dashboard: DashboardSettings = Field(default_factory=DashboardSettings)
 
 
 def load_settings(path: Path | None = None) -> Settings:

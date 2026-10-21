@@ -268,3 +268,7 @@ def backup_periodic() -> None:
     backups = sorted(get_paths().backups.glob("tengen-*.db"))
     for old in backups[:-14]:  # keep two weeks
         old.unlink(missing_ok=True)
+
+
+# LinkedIn tasks register on the same queue (imported last: they import `huey` from this module).
+from tengen_toppa.linkedin import tasks as _linkedin_tasks  # noqa: E402, F401

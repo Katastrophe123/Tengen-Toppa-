@@ -10,6 +10,7 @@ Anything still unknown and required is asked on WhatsApp and saved to the bank.
 from __future__ import annotations
 
 import difflib
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -19,10 +20,14 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from tengen_toppa.apply.fields import FormField, normalize_question, pick_option
-from tengen_toppa.config import ApplicantSettings
-from tengen_toppa.llm.claude_client import ask
+from tengen_toppa.authorization import authorization_answer
+from tengen_toppa.config import ApplicantSettings, ExperienceSettings, settings
+from tengen_toppa.experience import experience_answer
+from tengen_toppa.llm.claude_client import ClaudeError, ask
 from tengen_toppa.profile import MasterProfile
 from tengen_toppa.store.models import QAItem
+
+log = logging.getLogger(__name__)
 
 YES, NO = "Yes", "No"
 
@@ -67,10 +72,6 @@ RULES: list[Rule] = [
         r"\bcurrent (job )?title\b|\bcurrent role\b|\bcurrent designation\b",
         lambda p, a: p.experience[0].role if p.experience else "",
     ),
-    (
-        r"\byears of (professional |relevant |total )?experience\b|\bhow many years\b",
-        lambda p, a: f"{p.basics.years_experience:g}",
-    ),
     (r"\bsponsor", lambda p, a: _yn(a.requires_sponsorship)),
     (
         r"\b(legally )?(authori[sz]ed|eligible|permitted)\b.*\bwork\b|\bwork (permit|authori[sz]ation)\b",
@@ -111,14 +112,91 @@ def rule_answer(label: str, profile: MasterProfile, applicant: ApplicantSettings
     return None
 
 
-def bank_answer(s: Session, label: str, threshold: float = 0.86) -> str | None:
-    norm = normalize_question(label)
-    best, best_score = None, 0.0
+_STOP = {
+    "a",
+    "an",
+    "the",
+    "do",
+    "does",
+    "you",
+    "your",
+    "are",
+    "is",
+    "have",
+    "has",
+    "of",
+    "to",
+    "for",
+    "in",
+    "on",
+    "with",
+    "and",
+    "or",
+    "we",
+    "our",
+    "this",
+    "that",
+    "be",
+    "will",
+    "would",
+    "can",
+    "please",
+    "kindly",
+    "i",
+    "me",
+    "my",
+    "it",
+    "as",
+    "at",
+    "if",
+    "any",
+    "what",
+    "how",
+    "which",
+}
+# Wording-only differences that never change meaning. Numbers, skills, places, days never belong here.
+_FILLER = {
+    "current",
+    "currently",
+    "overall",
+    "total",
+    "professional",
+    "relevant",
+    "work",
+    "working",
+    "really",
+    "able",
+    "willing",
+    "comfortable",
+    "okay",
+    "ok",
+    "open",
+}
+
+
+def _content_tokens(text: str) -> set[str]:
+    return {t for t in normalize_question(text).split() if t not in _STOP}
+
+
+def same_question(a: str, b: str) -> bool:
+    """True only when two questions differ in wording, never in substance.
+
+    '3+ years of Python' vs '5+ years of Python', 'Python' vs 'Java', 'office 5 days' vs '3 days'
+    all differ in a content token, so they never match, however similar the strings are."""
+    ta, tb = _content_tokens(a), _content_tokens(b)
+    if ta == tb:
+        return True
+    diff = ta ^ tb
+    if not diff <= _FILLER:
+        return False
+    return difflib.SequenceMatcher(None, normalize_question(a), normalize_question(b)).ratio() >= 0.85
+
+
+def bank_answer(s: Session, label: str) -> str | None:
     for item in s.exec(select(QAItem)):
-        score = difflib.SequenceMatcher(None, norm, normalize_question(item.question)).ratio()
-        if score > best_score:
-            best, best_score = item.answer, score
-    return best if best_score >= threshold else None
+        if same_question(label, item.question):
+            return item.answer
+    return None
 
 
 def save_answer(s: Session, question: str, answer: str) -> None:
@@ -169,14 +247,20 @@ def llm_answers(
         f"<qa_bank>\n" + "\n".join(f"Q: {q.question}\nA: {q.answer}" for q in bank) + "\n</qa_bank>\n"
         f"<job>\n{job_context[:6000]}\n</job>\n<questions>\n{qs}\n</questions>"
     )
-    res = ask(
-        "Answer the application questions following the rules. Input on stdin.",
-        payload,
-        LLMAnswers,
-        system_prompt="answer_questions.md",
-        model=model,
-        timeout=timeout,
-    )
+    try:
+        res = ask(
+            "Answer the application questions following the rules. Input on stdin.",
+            payload,
+            LLMAnswers,
+            system_prompt="answer_questions.md",
+            model=model,
+            timeout=timeout,
+        )
+    except ClaudeError as e:
+        # Expired Claude session or quota must not kill a run: unanswered questions
+        # simply fall through to the WhatsApp queue.
+        log.warning("llm_answers unavailable (%s); questions go to WhatsApp", e)
+        return {}
     by_key = {f.key: f for f in fields}
     out: dict[str, str] = {}
     for a in res.value.answers:
@@ -215,27 +299,48 @@ def resolve(
     use_llm: bool = True,
     model: str = "haiku",
     timeout: int = 300,
+    experience: ExperienceSettings | None = None,
+    job_location: str = "",
 ) -> Resolution:
+    exp = experience or settings().experience
     res = Resolution()
     pending: list[FormField] = []
+    no_llm: set[str] = set()
     for f in fields:
         if f.kind == "file":
             continue  # resume / cover letter uploads handled by the filler
         if f.kind == "checkbox" and not f.options and _is_consent(f.label):
             res.answers[f.key], res.sources[f.key] = "check", "consent"
             continue
+        aa = authorization_answer(f.label, job_location=job_location, applicant=applicant)
+        if aa.applies and aa.answer:  # only when the country is known; unclear falls through to rules
+            no_llm.add(f.key)  # work authorization: never guessed, only from your countries list
+            value = pick_option(f.options, aa.answer) if f.options else aa.answer
+            if value:
+                res.answers[f.key], res.sources[f.key] = value, "auth"
+                continue
         ruled = rule_answer(f.label, profile, applicant)
-        value, source = (ruled, "rule") if ruled else (bank_answer(s, f.label), "bank")
+        if ruled:
+            value, source = ruled, "rule"
+        else:
+            ea = experience_answer(f.label, kind=f.kind, options=f.options, profile=profile, exp=exp)
+            if ea.applies:
+                no_llm.add(f.key)  # experience claims come only from your stated years
+                value, source = (ea.answer, "experience") if ea.answer else (bank_answer(s, f.label), "bank")
+            else:
+                value, source = bank_answer(s, f.label), "bank"
         if value and f.options:
             value = pick_option(f.options, value)
         if value:
             res.answers[f.key], res.sources[f.key] = value, source
         else:
             pending.append(f)
-    if pending and use_llm:
+    llm_pending = [f for f in pending if f.key not in no_llm]
+    if llm_pending and use_llm:
+        pending_for_llm = llm_pending
         bank = list(s.exec(select(QAItem)))
         for key, value in llm_answers(
-            pending,
+            pending_for_llm,
             profile=profile,
             applicant=applicant,
             bank=bank,

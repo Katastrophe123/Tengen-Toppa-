@@ -98,7 +98,9 @@ def send_digest_template(s: Session, waiting: int) -> bool:
         return False
 
 
-def send_screenshot(s: Session, path: Path, caption: str, *, job_id: int, buttons: list[Button] | None = None) -> bool:
+def send_screenshot(
+    s: Session, path: Path, caption: str, *, job_id: int | None, buttons: list[Button] | None = None
+) -> bool:
     """Form screenshot + optional action buttons. Falls back to a text alert outside the 24h window."""
     client = get_client()
     if client is None:

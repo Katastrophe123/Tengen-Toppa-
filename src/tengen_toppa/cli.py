@@ -494,7 +494,7 @@ def worker() -> None:
     """Run the background worker (1 thread => 1 Claude call at a time) + periodic schedules."""
     from tengen_toppa.pipeline.tasks import huey
 
-    huey.create_consumer(workers=1, periodic=True).run()
+    huey.create_consumer(workers=2, periodic=True).run()
 
 
 @app.command("wa-verify")
@@ -674,6 +674,11 @@ def tunnel_sync() -> None:
     if not r.get("success"):
         typer.echo(f"Meta rejected the new URL: {r.get('error', {}).get('message', r)}")
         raise typer.Exit(1)
+    from tengen_toppa.store.db import kv_set, session
+
+    with session() as s:
+        kv_set(s, "tunnel_url", f"https://{host}")
+        kv_set(s, "commands_checked_at", None)
     typer.echo(f"Meta webhook now points to {url}\nSend 'help' on WhatsApp to test.")
 
 
@@ -710,6 +715,10 @@ def wa_subscribe(waba_id: str) -> None:
         raise typer.Exit(1)
     subs = httpx.get(f"{base}/subscribed_apps", params=auth, timeout=20).json()
     names = [a.get("whatsapp_business_api_data", {}).get("name") for a in subs.get("data", [])]
+    from tengen_toppa.store.db import kv_set, session
+
+    with session() as s:
+        kv_set(s, "waba_id", waba_id.strip())
     typer.echo(f"Subscribed. Apps receiving this account's messages: {names}")
     typer.echo("Now send 'help' to the test number on WhatsApp.")
 
@@ -789,6 +798,157 @@ def launchd(
             f"launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/{label}.plist"
         )
     typer.echo("Uninstall: launchctl bootout gui/$(id -u)/<label>")
+
+
+# ---------------- resume file + LinkedIn ----------------
+
+resume_app = typer.Typer(help="The exact resume PDF used for LinkedIn Easy Apply.", no_args_is_help=True)
+app.add_typer(resume_app, name="resume")
+
+
+@resume_app.command("set")
+def resume_set(
+    pdf: Path, force: Annotated[bool, typer.Option(help="install even if it disagrees with the profile")] = False
+) -> None:
+    """Install a resume PDF (checked against data/profile/master_profile.json)."""
+    from tengen_toppa.pipeline import steps
+    from tengen_toppa.resume_file import ResumeError, install
+    from tengen_toppa.store.db import session
+
+    with session() as s:
+        try:
+            info, problems = install(s, pdf.expanduser(), steps.profile(), force=force)
+        except ResumeError as e:
+            typer.echo(f"Not installed: {e}")
+            raise typer.Exit(1) from None
+    typer.echo(f"Installed {pdf.name} as {info.display_name} ({info.pages} pages, sha256 {info.sha256[:12]})")
+    for p in problems:
+        typer.echo(f"warning: {p}")
+
+
+@resume_app.command("show")
+def resume_show() -> None:
+    from tengen_toppa.resume_file import ResumeError, current
+    from tengen_toppa.store.db import session
+
+    with session() as s:
+        try:
+            info = current(s)
+        except ResumeError as e:
+            typer.echo(str(e))
+            raise typer.Exit(1) from None
+    typer.echo(f"{info.display_name}: {info.path} ({info.pages} pages, sha256 {info.sha256[:12]})")
+
+
+@app.command("li-run")
+def li_run(
+    dry: Annotated[bool, typer.Option("--dry", help="read + rank only, apply to nothing")] = False,
+    target: Annotated[int | None, typer.Option(help="max applications this run")] = None,
+) -> None:
+    """Queue a LinkedIn run on the worker (same as 'run' / 'run dry' on WhatsApp)."""
+    from tengen_toppa.linkedin.tasks import li_start
+
+    li_start("dry" if dry else "full", "cli", target)
+    typer.echo("Queued. The worker runs it; watch WhatsApp or `tengen li-dash`.")
+
+
+@app.command("li-harvest")
+def li_harvest(pages: Annotated[int, typer.Option(help="page budget for this run")] = 3) -> None:
+    """Read LinkedIn search pages into the pool right now (read-only: no clicks on any job)."""
+    from tengen_toppa.apply import browser as br
+    from tengen_toppa.config import settings
+    from tengen_toppa.linkedin.harvest import harvest
+    from tengen_toppa.linkedin.pool import rank_pool
+    from tengen_toppa.pipeline import steps
+    from tengen_toppa.store.db import session
+
+    cfg = settings()
+    with session() as s, br.browser_lock(owner="cli-harvest"):
+        port = br.start_configured()
+        with br.attached(port) as b:
+            page = br.open_page(b, "about:blank")
+            try:
+                stats = harvest(
+                    s,
+                    page,
+                    cfg,
+                    page_budget=pages,
+                    on_page=lambda st: typer.echo(
+                        f"  page {st.pages}: seen {st.seen}, new {st.new}, "
+                        f"eligible new {st.eligible_new}, pool {st.pool}"
+                    ),
+                )
+            finally:
+                page.close()
+        rank_pool(s, steps.profile())
+    typer.echo(
+        f"Done: {stats.pages} pages, {stats.seen} jobs seen, {stats.new} new, {stats.eligible_new} eligible "
+        f"new. Pool: {stats.pool} (first fill: {stats.first_fill})."
+    )
+
+
+@app.command("li-pool")
+def li_pool(limit: int = 20, state: str = "pooled") -> None:
+    """Show the top of the LinkedIn pool (or another state: ineligible, applied, skipped...)."""
+    from sqlmodel import select as sel
+
+    from tengen_toppa.store.db import session
+    from tengen_toppa.store.models import LiJob
+
+    with session() as s:
+        q = sel(LiJob).where(LiJob.state == state).order_by(LiJob.score.desc().nullslast()).limit(limit)  # type: ignore[union-attr]
+        for j in s.exec(q):
+            sc = f"{j.score:.3f}" if j.score is not None else "  -  "
+            typer.echo(
+                f"{j.job_id}  {sc}  {j.title[:45]:<45} {j.company[:22]:<22} {j.location[:28]}"
+                + (f"  [{j.skip_reason}]" if j.skip_reason else "")
+            )
+
+
+@app.command("li-dash")
+def li_dash() -> None:
+    """Print the WhatsApp dashboard text."""
+    from tengen_toppa.store.db import session
+    from tengen_toppa.whatsapp import dashboard
+
+    with session() as s:
+        typer.echo(dashboard.build(s))
+
+
+@app.command("li-stop")
+def li_stop() -> None:
+    """Local kill switch: stops the LinkedIn run after the current step (works without WhatsApp)."""
+    from tengen_toppa.linkedin.controller import request_stop, stop_file
+    from tengen_toppa.store.db import session
+
+    with session() as s:
+        request_stop(s)
+    typer.echo(f"Stop requested. For a hard block on future runs too: touch {stop_file()}")
+
+
+@app.command("li-preflight")
+def li_preflight(dry: bool = False) -> None:
+    """Run the pre-run checks (read-only)."""
+    from tengen_toppa.linkedin.controller import preflight
+    from tengen_toppa.linkedin.live import LiveOps
+    from tengen_toppa.store.db import session
+
+    with session() as s:
+        problems = preflight(s, LiveOps(), kind="dry" if dry else "full")
+    for p in problems:
+        typer.echo(f"[FAIL] {p}")
+    typer.echo("All checks passed." if not problems else f"{len(problems)} problem(s).")
+    raise typer.Exit(1 if problems else 0)
+
+
+@app.command("li-sync-status")
+def li_sync_status() -> None:
+    """Read LinkedIn's Applied tracker and update statuses (read-only)."""
+    from tengen_toppa.linkedin.live import LiveOps
+    from tengen_toppa.store.db import session
+
+    with session() as s:
+        typer.echo(f"updated: {LiveOps().sync_status(s)}")
 
 
 if __name__ == "__main__":

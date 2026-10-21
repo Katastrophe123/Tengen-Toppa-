@@ -1,6 +1,6 @@
 [project]
 name = "tengen-toppa"
-version = "1.0.1"
+version = "1.1.0"
 description = "Tengen-Toppa: local-first AI job application autopilot (Claude Code + WhatsApp)"
 readme = "README.md"
 authors = [
@@ -60,3 +60,4 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 "tests/conftest.py" = ["E402"]  # TENGEN_HOME must be set before importing the package
 "tests/*" = ["E501"]
 "src/tengen_toppa/apply/form.py" = ["E501"]  # embedded JavaScript
+"src/tengen_toppa/linkedin/*.py" = ["E501"]  # embedded JavaScript
